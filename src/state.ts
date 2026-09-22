@@ -10,6 +10,10 @@ export type AuditSnapshot = {
   findings: string[]
 }
 
+export function shouldSaveSnapshot(results: readonly { error?: string }[]): boolean {
+  return results.length > 0 && results.every((result) => !result.error)
+}
+
 export function snapshotDir(projectPath: string): string {
   const slug = `${basename(projectPath).replace(/[^a-zA-Z0-9._-]/g, "_")}-${createHash("sha256").update(projectPath).digest("hex").slice(0, 8)}`
   return join(homedir(), ".local", "share", "opencode", "audit", slug)

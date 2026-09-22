@@ -11,12 +11,12 @@
       "types": "./dist/index.d.ts"
     }
   },
-  "files": ["dist"],
+  "files": ["dist", "tui"],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "bundle": "npx esbuild src/index.ts --bundle --format=esm --platform=node --target=node20 '--external:@opencode-ai/*' --outfile=$HOME/.config/opencode/plugins/opencode-audit.js",
-    "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "npm run build && node --test \"dist/*.test.js\""
+    "typecheck": "tsc --noEmit -p tsconfig.test.json",
+    "test": "tsc -p tsconfig.test.json && node --test \"dist-test/*.test.js\""
   },
   "devDependencies": {
     "@opencode-ai/plugin": "1.18.20",

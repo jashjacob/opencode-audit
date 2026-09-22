@@ -1,5 +1,4 @@
 import fs from "node:fs"
-import path from "node:path"
 import type { OpencodeClient } from "@opencode-ai/sdk"
 import type { ToolDefinition } from "@opencode-ai/plugin/tool"
 import { tool } from "@opencode-ai/plugin/tool"
@@ -7,6 +6,7 @@ import { createLogger, loadConfig, requireModel, resolveSessionModel } from "./c
 import type { ModelRef } from "./config.js"
 import { runPlaybook } from "./orchestrator.js"
 import { listPlaybooks, resolvePlaybook } from "./playbooks.js"
+import { resolveWorktreePath } from "./paths.js"
 import { renderReport } from "./report.js"
 import { deltaReports, extractFindings, findingIdentity, loadSnapshot, parseFindingLine, renderDeltaFooter, saveSnapshot, severityRank } from "./state.js"
 
@@ -170,6 +170,36 @@ export function clusterFindings(findings: string[], maxClusters: number): Cluste
     })
   }
   return clusters
+}
+
+function clusterLocationKeys(cluster: Cluster): Set<string> {
+  const keys = new Set<string>()
+  for (const finding of cluster.findings) {
+    const parsed = parseFindingLine(finding)
+    if (parsed?.structured && parsed.key) keys.add(parsed.key)
+  }
+  return keys.size > 0 ? keys : new Set(["*"])
+}
+
+export function groupIndependentClusters(clusters: Cluster[]): Cluster[][] {
+  const batches: Cluster[][] = []
+  const keysByCluster = new Map<Cluster, Set<string>>()
+  for (const cluster of clusters) {
+    const keys = clusterLocationKeys(cluster)
+    keysByCluster.set(cluster, keys)
+    let batch = batches.find((candidate) => candidate.every((other) => {
+      const otherKeys = keysByCluster.get(other)
+      if (!otherKeys) return false
+      if (keys.has("*") || otherKeys.has("*")) return false
+      return [...keys].every((key) => !otherKeys.has(key))
+    }))
+    if (!batch) {
+      batch = []
+      batches.push(batch)
+    }
+    batch.push(cluster)
+  }
+  return batches
 }
 
 function formatEvidence(evidence: string): string {
@@ -568,9 +598,10 @@ export function createFixFleet(client: OpencodeClient): FixFleetModule {
       }
       ctx.abort.addEventListener("abort", () => log.info("fix fleet aborted"), { once: true })
 
-      const reportPath = args.report
-        ? path.resolve(ctx.worktree, args.report)
-        : path.resolve(ctx.worktree, `AUDIT-${args.playbook}.md`)
+      const reportPath = resolveWorktreePath(
+        ctx.worktree,
+        args.report ?? `AUDIT-${args.playbook}.md`,
+      )
 
       let reportText: string
       try {
@@ -638,19 +669,25 @@ export function createFixFleet(client: OpencodeClient): FixFleetModule {
         ctx.sessionID,
         config.model ?? (await resolveSessionModel(client, ctx.sessionID)),
       )
-      const results = await mapWithConcurrency(clusters, maxFixers, (cluster) => {
-        if (ctx.abort.aborted) {
-          return Promise.resolve<FixerResult>({
-            sessionID: "",
-            ok: false,
-            error: "aborted before cluster started",
-            summary: "",
-            diffFiles: [],
-            verdicts: cluster.findings.map((finding) => ({ finding, verdict: "unknown", note: "" })),
-          })
-        }
-        return runCluster(client, cluster, args.playbook, ctx.directory, fleetModel, evidenceByFinding, reportPath)
-      })
+      const results: FixerResult[] = new Array(clusters.length)
+      for (const batch of groupIndependentClusters(clusters)) {
+        const batchResults = await mapWithConcurrency(batch, maxFixers, (cluster) => {
+          if (ctx.abort.aborted) {
+            return Promise.resolve<FixerResult>({
+              sessionID: "",
+              ok: false,
+              error: "aborted before cluster started",
+              summary: "",
+              diffFiles: [],
+              verdicts: cluster.findings.map((finding) => ({ finding, verdict: "unknown", note: "" })),
+            })
+          }
+          return runCluster(client, cluster, args.playbook, ctx.directory, fleetModel, evidenceByFinding, reportPath)
+        })
+        batch.forEach((cluster, index) => {
+          results[cluster.index - 1] = batchResults[index] as FixerResult
+        })
+      }
 
       const verdicts: ClusterVerdict[] = clusters.map((c, i) => ({
         cluster: c.index,

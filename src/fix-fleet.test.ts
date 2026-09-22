@@ -1,6 +1,6 @@
 import { deepStrictEqual, strictEqual } from "node:assert/strict"
 import { describe, it } from "node:test"
-import { buildFixerPrompt, buildValidatorPrompt, clusterFindings, parseFindings, parseReportEntries, parseVerdicts } from "./fix-fleet.js"
+import { buildFixerPrompt, buildValidatorPrompt, clusterFindings, groupIndependentClusters, parseFindings, parseReportEntries, parseVerdicts } from "./fix-fleet.js"
 import { extractFindings } from "./state.js"
 
 describe("parseFindings", () => {
@@ -280,6 +280,42 @@ describe("clusterFindings", () => {
   it("never creates more clusters than findings", () => {
     const clusters = clusterFindings(["only one finding"], 8)
     deepStrictEqual(clusters.map((c) => c.findings.length), [1])
+  })
+})
+
+describe("groupIndependentClusters", () => {
+  it("runs disjoint locations together and serializes overlaps", () => {
+    const clusters = clusterFindings([
+      "[high] src/a.ts:1 — issue a",
+      "[med] src/b.ts:2 — issue b",
+      "[low] src/c.ts:3 — issue c",
+      "[low] src/d.ts:4 — issue d",
+      "[high] src/e.ts:5 — issue e",
+      "[med] src/f.ts:6 — issue f",
+      "[low] src/g.ts:7 — issue g",
+      "[low] src/h.ts:8 — issue h",
+      "[high] src/a.ts:9 — issue c",
+      "[med] src/i.ts:10 — issue i",
+      "[low] src/j.ts:11 — issue j",
+      "[low] src/k.ts:12 — issue k",
+    ], 3)
+    const batches = groupIndependentClusters(clusters)
+    deepStrictEqual(batches.map((batch) => batch.map((cluster) => cluster.index)), [[1, 2], [3]])
+  })
+
+  it("serializes findings without a stable location", () => {
+    const clusters = clusterFindings([
+      "unscoped issue one a",
+      "unscoped issue two b",
+      "unscoped issue three c",
+      "unscoped issue four d",
+      "unscoped issue five e",
+      "unscoped issue six f",
+      "unscoped issue seven g",
+      "unscoped issue eight h",
+    ], 2)
+    const batches = groupIndependentClusters(clusters)
+    strictEqual(batches.length, 2)
   })
 })
 

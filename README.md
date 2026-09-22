@@ -38,7 +38,7 @@ Audits never touch your files. Fixes ask once, up front, before spawning anythin
    > 🆕 3 new · 5 resolved · 12 total findings since last run (2026-09-17T07:30:00Z)
    ```
 
-6. The report is written to `AUDIT-<playbook>.md` in the worktree, the snapshot is updated, and the report is returned to the conversation.
+6. The report is written to `AUDIT-<playbook>.md` in the worktree, the snapshot is updated only when every probe succeeds, and the report is returned to the conversation. An explicit report path must remain inside the worktree.
 
 Delta identity is `location + issue` only. A finding that moved lines, changed severity, or got better evidence is recognized as the same issue — re-runs report only genuinely new findings.
 
@@ -46,7 +46,7 @@ Delta identity is `location + issue` only. A finding that moved lines, changed s
 
 1. `fix_fleet` reads `AUDIT-<playbook>.md` (or an explicit `report` path) and parses it: dedupe by stable identity, sort most-severe first, cap at 40, attach each finding's evidence (up to 3 lines).
 2. Findings are chunked into clusters of ~4 in report order. With `dry_run: true` you get the plan — clusters, evidence, fixer instructions — and nothing else happens.
-3. Otherwise the tool asks permission **once**, then runs one fixer per cluster in parallel (default 4 concurrent). Fixer rules: verify each finding against the code before editing; minimal diffs; no drive-by refactors; mark wrong or already-fixed findings `invalid` instead of forcing a change; defer design decisions to `needs-human`; run the project's typecheck/lint/build scripts if they exist.
+3. Otherwise the tool asks permission **once**, then runs non-overlapping clusters in parallel (default 4 concurrent). Clusters with overlapping locations are serialized so fixers never race over the same files. Fixer rules: verify each finding against the code before editing; minimal diffs; no drive-by refactors; mark wrong or already-fixed findings `invalid` instead of forcing a change; defer design decisions to `needs-human`; run the project's typecheck/lint/build scripts if they exist.
 4. A read-only validator then re-checks every finding independently and returns one verdict per finding:
 
    | Verdict | Meaning |

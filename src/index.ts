@@ -13,7 +13,9 @@ import { createFixFleet } from "./fix-fleet.js"
 import { runPlaybook } from "./orchestrator.js"
 import { listPlaybooks, resolvePlaybook } from "./playbooks.js"
 import { renderReport } from "./report.js"
+import { resolveWorktreePath } from "./paths.js"
 import {
+  shouldSaveSnapshot,
   deltaReports,
   extractFindings,
   loadSnapshot,
@@ -67,7 +69,7 @@ export default (async ({ client }) => {
       const report = renderReport(playbook, results, target)
       const delta = deltaReports(previous, report)
       const output = `${report}\n${renderDeltaFooter(delta, previous?.time ?? null)}`
-      if (results.some((r) => !r.error)) {
+      if (shouldSaveSnapshot(results)) {
         saveSnapshot({
           playbook: playbook.id,
           target,
@@ -89,7 +91,7 @@ export default (async ({ client }) => {
 
       let reportPath: string | null = null
       if (config.writeReport || args.report) {
-        const outPath = path.resolve(ctx.worktree, args.report ?? `AUDIT-${args.playbook}.md`)
+        const outPath = resolveWorktreePath(ctx.worktree, args.report ?? `AUDIT-${args.playbook}.md`)
         fs.mkdirSync(path.dirname(outPath), { recursive: true })
         fs.writeFileSync(outPath, output, "utf8")
         reportPath = outPath

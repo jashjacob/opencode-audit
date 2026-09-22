@@ -1,6 +1,6 @@
 import { deepStrictEqual, strictEqual } from "node:assert/strict"
 import { describe, it } from "node:test"
-import { deltaReports, extractFindings, renderDeltaFooter, type AuditSnapshot } from "./state.js"
+import { deltaReports, extractFindings, renderDeltaFooter, shouldSaveSnapshot, type AuditSnapshot } from "./state.js"
 
 const REPORT = [
   "# Audit Report",
@@ -228,5 +228,13 @@ describe("renderDeltaFooter", () => {
       renderDeltaFooter(d, "2026-09-17T10:00:00Z"),
       "> 🆕 2 new · 3 resolved · 7 total findings since last run (2026-09-17T10:00:00Z)",
     )
+  })
+})
+
+describe("shouldSaveSnapshot", () => {
+  it("requires at least one successful result and no failures", () => {
+    strictEqual(shouldSaveSnapshot([{ error: undefined }, { error: undefined }]), true)
+    strictEqual(shouldSaveSnapshot([{ error: undefined }, { error: "probe failed" }]), false)
+    strictEqual(shouldSaveSnapshot([]), false)
   })
 })
