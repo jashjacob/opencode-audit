@@ -1,0 +1,28 @@
+{
+  "name": "opencode-audit",
+  "version": "0.1.0",
+  "description": "Parallel subagent audit playbooks for opencode (dead-css, seo, a11y, mobile-ux, unused-deps).",
+  "type": "module",
+  "license": "MIT",
+  "main": "./dist/index.js",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "bundle": "npx esbuild src/index.ts --bundle --format=esm --platform=node --target=node20 '--external:@opencode-ai/*' --outfile=$HOME/.config/opencode/plugins/opencode-audit.js",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "npm run build && node --test \"dist/*.test.js\""
+  },
+  "devDependencies": {
+    "@opencode-ai/plugin": "1.18.20",
+    "@opencode-ai/sdk": "1.18.20",
+    "@types/node": "^26.6.2",
+    "esbuild": "^0.28.2",
+    "typescript": "^5.5.0"
+  }
+}
