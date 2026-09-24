@@ -26,7 +26,7 @@ export const extraPlaybooks: Record<string, Playbook> = {
       },
       {
         name: "blocking",
-        agent: "general",
+        agent: "explore",
         get system() {
           return probeSystem("Use websearch to confirm current Core Web Vitals thresholds and known third-party script costs where needed.")
         },
@@ -60,7 +60,7 @@ export const extraPlaybooks: Record<string, Playbook> = {
       },
       {
         name: "freshness",
-        agent: "general",
+        agent: "explore",
         get system() {
           return probeSystem("Use websearch to verify dated claims (years, statistics, product versions, prices) against current facts where possible.")
         },

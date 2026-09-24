@@ -1,7 +1,19 @@
-import { createHash } from "node:crypto"
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
+import { createHash, randomUUID } from "node:crypto"
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs"
 import { homedir } from "node:os"
 import { basename, join } from "node:path"
+
+const MAX_SNAPSHOTS_PER_PROJECT = 20
+
+/** Redact common credentials before audit data is persisted or shown. */
+export function redactSensitiveText(text: string): string {
+  return text
+    .replace(/-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----[\s\S]*?-----END (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/g, "[REDACTED PRIVATE KEY]")
+    .replace(/\bAKIA[0-9A-Z]{16}\b/g, "[REDACTED AWS KEY]")
+    .replace(/\b(?:gh[pousr]_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,})\b/g, "[REDACTED TOKEN]")
+    .replace(/\bBearer\s+[A-Za-z0-9._~+/-]{12,}=*/gi, "Bearer [REDACTED TOKEN]")
+    .replace(/\b(api[_-]?key|client[_-]?secret|password|passwd|secret|token)\b(\s*[:=]\s*)(["']?)[^\s"'`,;]{8,}/gi, "$1$2[REDACTED]")
+}
 
 export type AuditSnapshot = {
   playbook: string
@@ -15,7 +27,8 @@ export function shouldSaveSnapshot(results: readonly { error?: string }[]): bool
 }
 
 export function snapshotDir(projectPath: string): string {
-  const slug = `${basename(projectPath).replace(/[^a-zA-Z0-9._-]/g, "_")}-${createHash("sha256").update(projectPath).digest("hex").slice(0, 8)}`
+  const safeName = redactSensitiveText(basename(projectPath))
+  const slug = `${safeName.replace(/[^a-zA-Z0-9._-]/g, "_")}-${createHash("sha256").update(projectPath).digest("hex").slice(0, 8)}`
   return join(homedir(), ".local", "share", "opencode", "audit", slug)
 }
 
@@ -47,10 +60,38 @@ export function loadSnapshot(playbook: string, projectPath: string): AuditSnapsh
 }
 
 export function saveSnapshot(snapshot: AuditSnapshot): void {
+  let temporaryFile: string | undefined
   try {
     const file = snapshotFile(snapshot.playbook, snapshot.target)
-    mkdirSync(snapshotDir(snapshot.target), { recursive: true })
-    writeFileSync(file, JSON.stringify(snapshot, null, 2), "utf8")
+    const directory = snapshotDir(snapshot.target)
+    mkdirSync(directory, { recursive: true, mode: 0o700 })
+    temporaryFile = join(directory, `.${basename(file)}.${process.pid}.${randomUUID()}.tmp`)
+    const safeSnapshot = { ...snapshot, target: redactSensitiveText(snapshot.target) }
+    writeFileSync(temporaryFile, JSON.stringify(safeSnapshot, null, 2), { encoding: "utf8", mode: 0o600, flag: "wx" })
+    renameSync(temporaryFile, file)
+    temporaryFile = undefined
+    pruneSnapshots(directory)
+  } catch {
+    if (temporaryFile) {
+      try {
+        unlinkSync(temporaryFile)
+      } catch {}
+    }
+  }
+}
+
+/** Keep only the newest snapshot files for a project; ignore temp and non-JSON files. */
+export function pruneSnapshots(directory: string, maxFiles = MAX_SNAPSHOTS_PER_PROJECT): void {
+  try {
+    const files = readdirSync(directory)
+      .filter((name) => name.endsWith(".json"))
+      .map((name) => ({ path: join(directory, name), modified: statSync(join(directory, name)).mtimeMs }))
+      .sort((a, b) => b.modified - a.modified)
+    for (const file of files.slice(Math.max(0, maxFiles))) {
+      try {
+        unlinkSync(file.path)
+      } catch {}
+    }
   } catch {}
 }
 

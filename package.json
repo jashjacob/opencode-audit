@@ -1,9 +1,22 @@
 {
   "name": "opencode-audit",
   "version": "0.1.0",
-  "description": "Parallel subagent audit playbooks for opencode (dead-css, seo, a11y, mobile-ux, unused-deps).",
+  "description": "Parallel code audit and verified fixes for OpenCode",
   "type": "module",
   "license": "MIT",
+  "author": "Jash Jacob",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jashjacob/opencode-audit.git"
+  },
+  "homepage": "https://github.com/jashjacob/opencode-audit#readme",
+  "bugs": {
+    "url": "https://github.com/jashjacob/opencode-audit/issues"
+  },
+  "keywords": ["opencode", "audit", "code-review", "agents", "plugin"],
+  "engines": {
+    "node": ">=22"
+  },
   "main": "./dist/index.js",
   "exports": {
     ".": {
@@ -11,15 +24,18 @@
       "types": "./dist/index.d.ts"
     }
   },
-  "files": ["dist"],
+  "files": ["dist", "LICENSE", "README.md", "CHANGELOG.md"],
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "bundle": "npx esbuild src/index.ts --bundle --format=esm --platform=node --target=node20 '--external:@opencode-ai/*' --outfile=$HOME/.config/opencode/plugins/opencode-audit.js",
+    "prepare": "npm run build",
+    "bundle": "node scripts/bundle.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.test.json",
     "test": "tsc -p tsconfig.test.json && node --test \"dist-test/*.test.js\""
   },
+  "dependencies": {
+    "@opencode-ai/plugin": "1.18.20"
+  },
   "devDependencies": {
-    "@opencode-ai/plugin": "1.18.20",
     "@opencode-ai/sdk": "1.18.20",
     "@types/node": "^26.6.2",
     "esbuild": "^0.28.2",

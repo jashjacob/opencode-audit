@@ -60,6 +60,7 @@ export function loadConfig(): AuditConfig {
   const env = process.env
   const debug = env.OPENCODE_AUDIT_DEBUG === "1" || env.OPENCODE_AUDIT_DEBUG === "true"
   const model = env.OPENCODE_AUDIT_MODEL
+  const requestedConcurrency = Number(env.OPENCODE_AUDIT_CONCURRENCY)
   return {
     debug,
     model: model
@@ -69,7 +70,7 @@ export function loadConfig(): AuditConfig {
           return { providerID, modelID: rest.join("/") }
         })()
       : null,
-    maxConcurrency: Math.max(1, Number(env.OPENCODE_AUDIT_CONCURRENCY) || 5),
+    maxConcurrency: Math.min(8, Math.max(1, Number.isFinite(requestedConcurrency) ? Math.floor(requestedConcurrency) || 5 : 5)),
     writeReport: env.OPENCODE_AUDIT_WRITE_REPORT !== "0",
   }
 }

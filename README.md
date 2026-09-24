@@ -62,6 +62,8 @@ Delta identity is `location + issue` only. A finding that moved lines, changed s
 
 The two steps never chain automatically. `/audit` produces a report and a suggested todo list; nothing is fixed until you run `/fix`.
 
+Before approving a fix run, review its `dry_run` plan and start from a clean Git state. Approval allows the fixer agents to edit files immediately; there is no built-in rollback. Review the resulting diff and use your normal Git workflow to keep or revert changes.
+
 ## Playbooks
 
 | Playbook | Aliases | Probes |
@@ -94,20 +96,35 @@ Evidence and notes never participate in delta identity, so editing proof can't c
 
 ## Snapshots and deltas
 
-Snapshots live outside the repo (`~/.local/share/opencode/audit/<slug>-<hash>/<playbook>.json`), keyed by absolute project path. First run reports `first run — no baseline yet`; missing or corrupt snapshots are treated the same way. Reports themselves are plain markdown — commit them or delete them, it doesn't affect tracking.
+Snapshots live outside the repo (`~/.local/share/opencode/audit/<slug>-<hash>/<playbook>.json`), keyed by absolute project path. First run reports `first run — no baseline yet`; missing or corrupt snapshots are treated the same way. Reports and snapshots contain repository-derived findings and evidence. The plugin redacts common credential formats, but this is not comprehensive secret detection; review reports before sharing or committing them. Snapshots store the target path, timestamp, and finding text.
 
 ## Install
 
-The server plugin is one bundled file that opencode auto-discovers — CLI and desktop, no config entry required:
+The plugin can be installed as one self-contained bundled file. By default, the bundle command writes to OpenCode's user plugin directory (`~/.config/opencode/plugins`):
 
 ```sh
 git clone https://github.com/jashjacob/opencode-audit.git
 cd opencode-audit
 npm install
-npm run bundle        # → ~/.config/opencode/plugins/opencode-audit.js
+npm run bundle
 ```
 
-Restart opencode. You get the `audit_fleet` and `fix_fleet` tools plus the `/audit` and `/fix` commands.
+Restart OpenCode. You get the `audit_fleet` and `fix_fleet` tools plus the `/audit` and `/fix` commands. To use another plugin directory, set `OPENCODE_PLUGIN_DIR`; to choose the complete output filename, set `OPENCODE_AUDIT_BUNDLE_OUT`:
+
+```sh
+OPENCODE_PLUGIN_DIR="/path/to/opencode/plugins" npm run bundle
+OPENCODE_AUDIT_BUNDLE_OUT="/path/to/plugins/opencode-audit.js" npm run bundle
+```
+
+After the package is published, OpenCode can install it and its dependencies through the plugin list in `opencode.json`:
+
+```json
+{
+  "plugin": ["opencode-audit"]
+}
+```
+
+The npm package includes the compiled `dist/` entry point and declares the OpenCode plugin API as a runtime dependency. When installing directly from Git as a Node.js dependency, npm runs `prepare` to build the entry point.
 
 ## Configuration
 
@@ -118,14 +135,27 @@ Restart opencode. You get the `audit_fleet` and `fix_fleet` tools plus the `/aud
 | `OPENCODE_AUDIT_WRITE_REPORT` | `1` | Set `0` to skip writing `AUDIT-<playbook>.md` (an explicit `report` argument still wins) |
 | `OPENCODE_AUDIT_DEBUG` | `0` | Log plugin activity to stderr |
 
+## Privacy
+
+The plugin does not make its own model-provider requests. It starts OpenCode sessions, which send prompts and relevant repository context to the model provider configured in OpenCode. Audit reports can contain paths, code excerpts, and other repository-derived evidence; fix prompts include findings and evidence. Common credential formats are redacted, but detection is not comprehensive. Review reports before sharing them, and do not commit them if they contain sensitive details. Local snapshots retain finding text and a redacted target string under `~/.local/share/opencode/audit/`; the raw target still determines the snapshot key.
+
+## Troubleshooting
+
+- If OpenCode does not show the tools or commands, confirm that `opencode-audit.js` is in the plugin directory OpenCode loads, then restart OpenCode.
+- If bundling fails, run `npm install` in the cloned repository and check that Node.js 22 or newer is active.
+- If an audit cannot resolve a model, configure `OPENCODE_AUDIT_MODEL` or start the command in a session with a selected model.
+- If reports are not written, check `OPENCODE_AUDIT_WRITE_REPORT`; its default is `1`, and an explicit `report` argument requests a file regardless of that setting.
+
 ## Development
 
 ```sh
 npm run typecheck   # tsc --noEmit
-npm test            # build + node --test (53 tests)
+npm test            # compile tests + run them with node --test
 npm run build       # tsc → dist/
-npm run bundle      # esbuild → ~/.config/opencode/plugins/opencode-audit.js
+npm run bundle      # bundle → OpenCode plugin directory (override with env vars above)
 ```
+
+Publishing a GitHub release triggers the npm workflow. Configure an `NPM_TOKEN` repository secret with permission to publish this package before creating a release.
 
 Layout:
 

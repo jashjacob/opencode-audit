@@ -1,33 +1,13 @@
 import type { OpencodeClient } from "@opencode-ai/sdk"
 import type { AuditConfig } from "./config.js"
 import type { Playbook, Probe } from "./playbooks.js"
+import { extractSessionText, promptWithAbort, READ_ONLY_TOOLS } from "./session.js"
+import { redactSensitiveText } from "./state.js"
 
 export type ProbeResult = {
   probe: Probe
   text: string
   error?: string
-}
-
-type SessionPart = {
-  type?: string
-  text?: string
-}
-
-function extractText(reply: unknown): string {
-  const r = reply as {
-    parts?: SessionPart[]
-    content?: string
-    data?: { parts?: SessionPart[]; content?: string }
-  }
-  const parts = r?.parts || r?.data?.parts || []
-  const texts = parts
-    .filter((p) => p?.type === "text" && typeof p?.text === "string")
-    .map((p) => (p as { text: string }).text)
-    .join("\n")
-  if (texts.trim()) return texts.trim()
-  const content = r?.content || r?.data?.content
-  if (typeof content === "string" && content.trim()) return content.trim()
-  return ""
 }
 
 async function runProbe(
@@ -37,33 +17,44 @@ async function runProbe(
   config: AuditConfig,
   directory: string,
   parentSessionID: string,
+  signal: AbortSignal,
 ): Promise<ProbeResult> {
+  let sessionID: string | undefined
   try {
+    if (signal.aborted) throw new Error("audit aborted")
     const created = await client.session.create({
       body: { title: `audit:${probe.name}`, parentID: parentSessionID },
       query: { directory },
     })
-    const sessionID = created?.data?.id
+    sessionID = created?.data?.id
     if (!sessionID) throw new Error("session.create returned no id")
 
-    const reply = await client.session.prompt({
-      path: { id: sessionID },
-      query: { directory },
-      body: {
-        agent: probe.agent,
-        system: probe.system,
-        parts: [{ type: "text", text: probe.prompt(target) }],
-        ...(config.model ? { model: config.model } : {}),
-      },
-    })
-    const text = extractText(reply)
+    const reply = await promptWithAbort(client, sessionID, directory, signal, () =>
+      client.session.prompt({
+        path: { id: sessionID as string },
+        query: { directory },
+        body: {
+          agent: probe.agent,
+          // Deny by default so project-installed MCP/custom tools cannot expand the probe's powers.
+          tools: READ_ONLY_TOOLS,
+          system: probe.system,
+          parts: [{ type: "text", text: probe.prompt(target) }],
+          ...(config.model ? { model: config.model } : {}),
+        },
+      }),
+    )
+    const text = extractSessionText(reply)
     if (!text) throw new Error("probe returned no assistant text")
     return { probe, text }
   } catch (err) {
     return {
       probe,
       text: "",
-      error: err instanceof Error ? err.message : String(err),
+      error: redactSensitiveText(err instanceof Error ? err.message : String(err)),
+    }
+  } finally {
+    if (sessionID) {
+      await client.session.delete({ path: { id: sessionID }, query: { directory } }).catch(() => {})
     }
   }
 }
@@ -92,8 +83,16 @@ export async function runPlaybook(
   config: AuditConfig,
   directory: string,
   parentSessionID: string,
+  signal: AbortSignal,
+  onProgress?: (completed: number, total: number, probe: Probe, phase: "running" | "complete") => void,
 ): Promise<ProbeResult[]> {
-  return mapWithConcurrency(playbook.probes, config.maxConcurrency, (probe) =>
-    runProbe(client, probe, target, config, directory, parentSessionID),
+  let completed = 0
+  return mapWithConcurrency(playbook.probes, config.maxConcurrency, async (probe) => {
+    onProgress?.(completed, playbook.probes.length, probe, "running")
+    const result = await runProbe(client, probe, target, config, directory, parentSessionID, signal)
+    completed += 1
+    onProgress?.(completed, playbook.probes.length, probe, "complete")
+    return result
+  },
   )
 }

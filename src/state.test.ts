@@ -1,6 +1,9 @@
 import { deepStrictEqual, strictEqual } from "node:assert/strict"
+import { mkdtempSync, readdirSync, rmSync, writeFileSync, utimesSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import { describe, it } from "node:test"
-import { deltaReports, extractFindings, renderDeltaFooter, shouldSaveSnapshot, type AuditSnapshot } from "./state.js"
+import { deltaReports, extractFindings, loadSnapshot, pruneSnapshots, renderDeltaFooter, saveSnapshot, shouldSaveSnapshot, snapshotDir, type AuditSnapshot } from "./state.js"
 
 const REPORT = [
   "# Audit Report",
@@ -236,5 +239,52 @@ describe("shouldSaveSnapshot", () => {
     strictEqual(shouldSaveSnapshot([{ error: undefined }, { error: undefined }]), true)
     strictEqual(shouldSaveSnapshot([{ error: undefined }, { error: "probe failed" }]), false)
     strictEqual(shouldSaveSnapshot([]), false)
+  })
+})
+
+describe("pruneSnapshots", () => {
+  it("keeps the newest JSON snapshots and ignores other files", () => {
+    const directory = mkdtempSync(join(tmpdir(), "opencode-audit-snapshots-"))
+    try {
+      const old = join(directory, "old.json")
+      const middle = join(directory, "middle.json")
+      const newest = join(directory, "newest.json")
+      const temporary = join(directory, ".writing.tmp")
+      for (const file of [old, middle, newest, temporary]) writeFileSync(file, "{}")
+      const base = new Date("2026-01-01T00:00:00Z")
+      utimesSync(old, base, base)
+      utimesSync(middle, new Date(base.getTime() + 1000), new Date(base.getTime() + 1000))
+      utimesSync(newest, new Date(base.getTime() + 2000), new Date(base.getTime() + 2000))
+
+      pruneSnapshots(directory, 2)
+      deepStrictEqual(readdirSync(directory).sort(), [".writing.tmp", "middle.json", "newest.json"])
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
+  })
+})
+
+describe("saveSnapshot", () => {
+  it("writes a readable snapshot through an atomic temp-file rename", () => {
+    const directory = mkdtempSync(join(tmpdir(), "opencode-audit-home-"))
+    const previousHome = process.env.HOME
+    try {
+      process.env.HOME = directory
+      const target = "/project/example?token=supersecretvalue"
+      const snapshot: AuditSnapshot = {
+        playbook: "seo",
+        target,
+        time: "2026-09-24T00:00:00.000Z",
+        findings: ["[high] src/page.tsx:1 — missing canonical"],
+      }
+      saveSnapshot(snapshot)
+      deepStrictEqual(loadSnapshot("seo", target), { ...snapshot, target: "/project/example?token=[REDACTED]" })
+      strictEqual(snapshotDir(target).includes("supersecretvalue"), false)
+      deepStrictEqual(readdirSync(snapshotDir(target)), ["seo.json"])
+    } finally {
+      if (previousHome === undefined) delete process.env.HOME
+      else process.env.HOME = previousHome
+      rmSync(directory, { recursive: true, force: true })
+    }
   })
 })

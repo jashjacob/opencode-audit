@@ -50,7 +50,7 @@ export default (async ({ client }) => {
 
       log.info(`starting "${args.playbook}" audit against ${target}`)
       const playbook = resolvePlaybook(args.playbook)
-      ctx.metadata({ title: `audit: ${args.playbook}` })
+      ctx.metadata({ title: `audit: ${args.playbook}`, metadata: { stage: "starting", completed: 0, total: playbook.probes.length } })
 
       if (ctx.abort.aborted) {
         throw new Error("audit aborted before start")
@@ -65,7 +65,15 @@ export default (async ({ client }) => {
         { ...config, model: probeModel },
         ctx.directory,
         ctx.sessionID,
+        ctx.abort,
+        (completed, total, probe, phase) => {
+          ctx.metadata({
+            title: `audit: ${args.playbook} (${completed}/${total})`,
+            metadata: { stage: phase, completed, total, probe: probe.name },
+          })
+        },
       )
+      if (ctx.abort.aborted) throw new Error("audit aborted")
       const report = renderReport(playbook, results, target)
       const delta = deltaReports(previous, report)
       const output = `${report}\n${renderDeltaFooter(delta, previous?.time ?? null)}`
