@@ -22,8 +22,8 @@ export type AuditSnapshot = {
   findings: string[]
 }
 
-export function shouldSaveSnapshot(results: readonly { error?: string }[]): boolean {
-  return results.length > 0 && results.every((result) => !result.error)
+export function shouldSaveSnapshot(results: readonly { error?: string; malformed?: boolean }[]): boolean {
+  return results.length > 0 && results.every((result) => !result.error && !result.malformed)
 }
 
 export function snapshotDir(projectPath: string): string {
@@ -117,11 +117,12 @@ const SEVERITY_RE = /[([]\s*(?:high|med|medium|low)\s*[)\]]/gi
 
 const TAG_SEARCH_RE = /[([]\s*(high|med|medium|low)\s*[)\]]/i
 
-const TOKEN_RE = /^[A-Za-z0-9._~\-/@\\+]+$/
+const TOKEN_RE = /^(?:[A-Za-z]:)?[A-Za-z0-9._~\-/@\\+]+$/
 
 const EXT_RE = /\.[A-Za-z0-9]{2,12}$/
+const BARE_FILENAME_RE = /^(?:makefile|dockerfile|jenkinsfile|procfile|gemfile|rakefile|justfile|license|readme|authors|changelog|notice)$/i
 
-const FILE_LINE_RE = /^([A-Za-z0-9._~\-/@\\+]+):(\d{1,6})[.,;:)]*$/
+const FILE_LINE_RE = /^((?:[A-Za-z]:)?[A-Za-z0-9._~\-/@\\+]+):(\d{1,6})[.,;:)]*$/
 
 const SYNTHETIC_RE = /^(route|url):(.+)$/i
 
@@ -133,8 +134,9 @@ function collapse(text: string): string {
 
 function looksLikePath(token: string): boolean {
   if (!TOKEN_RE.test(token) || token.length < 3) return false
+  if (token.split(/[\\/]/).includes("..")) return false
   if (token.includes("/") || token.includes("\\")) return true
-  return EXT_RE.test(token) && !token.startsWith(".")
+  return (EXT_RE.test(token) && !token.startsWith(".")) || BARE_FILENAME_RE.test(token)
 }
 
 function remainder(text: string, token: string): string {

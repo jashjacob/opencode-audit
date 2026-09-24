@@ -12,7 +12,7 @@ import {
 import { createFixFleet } from "./fix-fleet.js"
 import { runPlaybook } from "./orchestrator.js"
 import { listPlaybooks, resolvePlaybook } from "./playbooks.js"
-import { renderReport } from "./report.js"
+import { isProbeOutputMalformed, renderReport } from "./report.js"
 import { resolveWorktreePath } from "./paths.js"
 import {
   shouldSaveSnapshot,
@@ -75,9 +75,15 @@ export default (async ({ client }) => {
       )
       if (ctx.abort.aborted) throw new Error("audit aborted")
       const report = renderReport(playbook, results, target)
-      const delta = deltaReports(previous, report)
-      const output = `${report}\n${renderDeltaFooter(delta, previous?.time ?? null)}`
-      if (shouldSaveSnapshot(results)) {
+      const complete = shouldSaveSnapshot(results.map((result) => ({
+        error: result.error,
+        malformed: isProbeOutputMalformed(result.text),
+      })))
+      const delta = deltaReports(complete ? previous : null, report)
+      const output = `${report}\n${complete
+        ? renderDeltaFooter(delta, previous?.time ?? null)
+        : "> delta unavailable — probes did not all return valid output"}`
+      if (complete) {
         saveSnapshot({
           playbook: playbook.id,
           target,
@@ -89,7 +95,7 @@ export default (async ({ client }) => {
       const probeMeta = results.map((r) => ({
         name: r.probe.name,
         agent: r.probe.agent,
-        error: r.error ?? null,
+        error: r.error ?? (isProbeOutputMalformed(r.text) ? "probe output did not match the required format" : null),
       }))
       const deltaMeta = {
         new: delta.newFindings.length,

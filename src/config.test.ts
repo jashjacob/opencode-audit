@@ -1,6 +1,6 @@
 import { deepStrictEqual, strictEqual } from "node:assert/strict"
 import { describe, it } from "node:test"
-import { loadConfig } from "./config.js"
+import { loadConfig, requireModel, resolveSessionModel } from "./config.js"
 
 describe("loadConfig", () => {
   it("caps concurrency and parses model configuration", () => {
@@ -31,5 +31,46 @@ describe("loadConfig", () => {
       if (previous === undefined) delete process.env.OPENCODE_AUDIT_CONCURRENCY
       else process.env.OPENCODE_AUDIT_CONCURRENCY = previous
     }
+  })
+})
+
+describe("resolveSessionModel", () => {
+  it("resolves the latest assistant model from the current SDK message shape", async () => {
+    const sessionID = "sdk-model-fallback-test"
+    const client = {
+      session: {
+        messages: async () => ({
+          data: [
+            { info: { role: "assistant", providerID: "old-provider", modelID: "old-model" }, parts: [] },
+            { info: { role: "user", providerID: "user-provider", modelID: "user-model" }, parts: [] },
+            { info: { role: "assistant", providerID: "deepseek", modelID: "deepseek-chat" }, parts: [] },
+          ],
+        }),
+      },
+    }
+
+    const model = await resolveSessionModel(client, sessionID)
+    deepStrictEqual(model, { providerID: "deepseek", modelID: "deepseek-chat" })
+    // This is the call site behavior: successful SDK fallback avoids requiring
+    // OPENCODE_AUDIT_MODEL explicitly.
+    deepStrictEqual(requireModel(sessionID, model), { providerID: "deepseek", modelID: "deepseek-chat" })
+  })
+
+  it("continues to support legacy model response shapes", async () => {
+    const client = {
+      session: {
+        messages: async () => ({
+          data: [
+            { info: { model: { providerID: "legacy-provider", modelID: "legacy-info-model" } } },
+            { model: { providerID: "legacy-provider", modelID: "legacy-direct-model" } },
+          ],
+        }),
+      },
+    }
+
+    deepStrictEqual(await resolveSessionModel(client, "legacy-model-fallback-test"), {
+      providerID: "legacy-provider",
+      modelID: "legacy-direct-model",
+    })
   })
 })

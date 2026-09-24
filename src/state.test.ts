@@ -3,7 +3,7 @@ import { mkdtempSync, readdirSync, rmSync, writeFileSync, utimesSync } from "nod
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, it } from "node:test"
-import { deltaReports, extractFindings, loadSnapshot, pruneSnapshots, renderDeltaFooter, saveSnapshot, shouldSaveSnapshot, snapshotDir, type AuditSnapshot } from "./state.js"
+import { deltaReports, extractFindings, loadSnapshot, parseFindingLine, pruneSnapshots, renderDeltaFooter, saveSnapshot, shouldSaveSnapshot, snapshotDir, type AuditSnapshot } from "./state.js"
 
 const REPORT = [
   "# Audit Report",
@@ -123,6 +123,23 @@ describe("extractFindings", () => {
   })
 })
 
+describe("parseFindingLine locations", () => {
+  it("recognizes bare filenames and Windows drive paths as structured locations", () => {
+    const makefile = parseFindingLine("[med] Makefile — missing target")
+    strictEqual(makefile?.structured, true)
+    strictEqual(makefile?.location, "Makefile")
+
+    const windows = parseFindingLine("[high] C:\\src\\app.tsx:12 — missing check")
+    strictEqual(windows?.structured, true)
+    strictEqual(windows?.location, "C:\\src\\app.tsx:12")
+  })
+
+  it("does not interpret traversal paths as structured locations", () => {
+    const parsed = parseFindingLine("[low] ../outside.ts:2 — unsafe path")
+    strictEqual(parsed?.structured, false)
+  })
+})
+
 describe("deltaReports", () => {
   const baseline: AuditSnapshot = {
     playbook: "css",
@@ -238,6 +255,8 @@ describe("shouldSaveSnapshot", () => {
   it("requires at least one successful result and no failures", () => {
     strictEqual(shouldSaveSnapshot([{ error: undefined }, { error: undefined }]), true)
     strictEqual(shouldSaveSnapshot([{ error: undefined }, { error: "probe failed" }]), false)
+    strictEqual(shouldSaveSnapshot([{ error: undefined, malformed: true }]), false)
+    strictEqual(shouldSaveSnapshot([{ error: undefined, malformed: false }]), true)
     strictEqual(shouldSaveSnapshot([]), false)
   })
 })

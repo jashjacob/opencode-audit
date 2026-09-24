@@ -55,7 +55,7 @@ describe("renderReport", () => {
     strictEqual(out.includes("malformed"), true)
   })
 
-  it("renders Note: lines as blockquotes", () => {
+  it("renders one Note: line as a blockquote and marks extra notes malformed", () => {
     const out = render(
       [
         "- [med] route:/checkout — sitemap entry missing",
@@ -65,7 +65,8 @@ describe("renderReport", () => {
     )
     const lines = out.split("\n")
     strictEqual(lines.includes("> Note: could not verify pagination"), true)
-    strictEqual(lines.includes("> Note: bullet-form note line here"), true)
+    strictEqual(lines.includes("> Note: bullet-form note line here"), false)
+    strictEqual(out.includes("malformed output"), true)
   })
 
   it("does not count severity tags inside evidence or note lines", () => {
@@ -85,6 +86,26 @@ describe("renderReport", () => {
     strictEqual(out.includes("malformed"), true)
   })
 
+  it("accepts only the exact clean marker, optionally followed by one note", () => {
+    const clean = render("No findings.\nNote: checked all routes")
+    strictEqual(clean.includes("> No findings."), true)
+    strictEqual(clean.includes("malformed output"), false)
+
+    const malformed = render("No findings\nThe audit is clean")
+    strictEqual(malformed.includes("malformed output"), true)
+    strictEqual(malformed.includes("0 returned malformed output"), false)
+  })
+
+  it("keeps valid findings visible when other probe lines are malformed", () => {
+    const out = render([
+      "- [high] src/app.ts:4 — valid issue",
+      "I also found some unrelated prose",
+    ].join("\n"))
+    strictEqual(extractFindings(out).length, 1)
+    strictEqual(out.includes("1 returned malformed output"), true)
+    strictEqual(out.includes("malformed output: 1 line"), true)
+  })
+
   it("requires the severity, location, and issue fields from the output contract", () => {
     const out = render([
       "- [high] missing a location",
@@ -97,6 +118,19 @@ describe("renderReport", () => {
       "[med] src/app.ts:4 — valid issue",
       "[low] route:checkout — missing route metadata",
     ])
+  })
+
+  it("accepts Windows drive paths and bare filenames, while rejecting traversal", () => {
+    const out = render([
+      "- [high] C:\\src\\app.tsx:12 — Windows finding",
+      "- [med] Makefile — missing target",
+      "- [low] C:\\src\\..\\outside.ts:2 — traversal",
+    ].join("\n"))
+    deepStrictEqual(extractFindings(out), [
+      "[high] C:\\src\\app.tsx:12 — Windows finding",
+      "[med] Makefile — missing target",
+    ])
+    strictEqual(out.includes("1 returned malformed output"), true)
   })
 
   it("redacts common credentials in findings, evidence, and notes", () => {

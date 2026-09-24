@@ -23,7 +23,7 @@ export function getRecordedModel(sessionID: string): ModelRef | null {
 }
 
 type SessionMessageLike = {
-  info?: { model?: ModelRef }
+  info?: { role?: string; providerID?: string; modelID?: string; model?: ModelRef }
   model?: ModelRef
 }
 
@@ -39,7 +39,13 @@ export async function resolveSessionModel(
     }
     const list = Array.isArray(resp?.data) ? resp.data : (resp as unknown as SessionMessageLike[]) ?? []
     for (const m of [...list].reverse()) {
-      const model = m?.info?.model ?? (m as SessionMessageLike)?.model
+      const info = m?.info
+      // Current SDK messages put model identity directly on AssistantMessage
+      // (`{ data: [{ info, parts }] }`). Older responses exposed `info.model`
+      // or `model`; keep those shapes supported for compatibility.
+      const model = info?.role === "assistant" && info.providerID && info.modelID
+        ? { providerID: info.providerID, modelID: info.modelID }
+        : info?.model ?? m?.model
       if (model?.providerID && model?.modelID) {
         recordSessionModel(sessionID, model)
         return { providerID: model.providerID, modelID: model.modelID }
