@@ -96,18 +96,6 @@ Evidence and notes never participate in delta identity, so editing proof can't c
 
 Snapshots live outside the repo (`~/.local/share/opencode/audit/<slug>-<hash>/<playbook>.json`), keyed by absolute project path. First run reports `first run — no baseline yet`; missing or corrupt snapshots are treated the same way. Reports themselves are plain markdown — commit them or delete them, it doesn't affect tracking.
 
-## TUI widget
-
-The sidebar footer (open with `Ctrl+X B`) polls every 2 seconds:
-
-```
-🛰 fleet
-▪ selectors running · tokens done · orphan-assets idle
-fix: mobile:1 ✓ · mobile:2 ⟳
-```
-
-Probe and fixer sessions are discovered via `session.children`, falling back to `session.list`, then to scanning the current session for `# <name> audit` report headers (`fleet: last audit css · 3 audits`). If nothing is found it shows `fleet: no audit activity`.
-
 ## Install
 
 The server plugin is one bundled file that opencode auto-discovers — CLI and desktop, no config entry required:
@@ -117,19 +105,6 @@ git clone https://github.com/jashjacob/opencode-audit.git
 cd opencode-audit
 npm install
 npm run bundle        # → ~/.config/opencode/plugins/opencode-audit.js
-```
-
-For the widget, copy it and enable it in `~/.config/opencode/tui.json`:
-
-```sh
-cp tui/fleet-widget.tsx ~/.config/opencode/plugins/fleet-widget.tsx
-```
-
-```json
-{
-  "$schema": "https://opencode.ai/tui.json",
-  "plugin": ["./plugins/fleet-widget.tsx"]
-}
 ```
 
 Restart opencode. You get the `audit_fleet` and `fix_fleet` tools plus the `/audit` and `/fix` commands.
@@ -164,8 +139,6 @@ src/
   state.ts          snapshot I/O, finding parsing, delta diffing
   fix-fleet.ts      fix_fleet: parse, cluster, fix, validate
   config.ts         env-var config, session model tracking
-tui/
-  fleet-widget.tsx  sidebar footer widget
 ```
 
 ### Adding a playbook
